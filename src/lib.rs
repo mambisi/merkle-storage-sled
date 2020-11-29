@@ -6,9 +6,16 @@ mod blake2b;
 mod base58;
 mod schema;
 mod codec;
-mod merkle_storage;
+mod  merkle_storage;
 mod database;
 mod db_iterator;
+
+pub mod prelude {
+    pub use crate::database::*;
+    pub use crate::merkle_storage::*;
+    pub use crate::db_iterator::*;
+}
+
 
 
 #[cfg(test)]

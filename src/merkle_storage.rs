@@ -909,4 +909,32 @@ mod tests {
         let res = storage.get(&vec!["a".to_string()]);
         assert!(if let MerkleError::ValueNotFound { .. } = res.err().unwrap() { true } else { false });
     }
+
+    // Test getting entire tree in string format for JSON RPC
+    #[test]
+    fn test_get_context_tree_by_prefix() {
+
+        { clean_db(); }
+
+        let all_json = "[[[\"adata\",\"b\",\"x\",\"y\"],[12,15]],[[\"data\",\"a\",\"x\",\"y\"],[5,6]],[[\"data\",\"b\",\"x\",\"y\"],[7,8]],[[\"data\",\"c\"],[2,5]]]";
+        let data_json = "[[[\"data\",\"a\",\"x\",\"y\"],[5,6]],[[\"data\",\"b\",\"x\",\"y\"],[7,8]],[[\"data\",\"c\"],[2,5]]]";
+
+        let config = Config::new().temporary(true).path(get_db_name()).cache_capacity(32 * 1024 * 1024);
+        let mut storage = get_storage(config);
+        let _commit = storage.commit(0, "Tezos".to_string(), "Genesis".to_string());
+
+        storage.set(&vec!["data".to_string(), "a".to_string(), "x".to_string()], &vec![3, 4]);
+        storage.set(&vec!["data".to_string(), "a".to_string()], &vec![20, 30]);
+        storage.set(&vec!["data".to_string(), "a".to_string(), "x".to_string(), "y".to_string()], &vec![5, 6]);
+        storage.set(&vec!["data".to_string(), "b".to_string(), "x".to_string(), "y".to_string()], &vec![7, 8]);
+        storage.set(&vec!["data".to_string(), "c".to_string()], &vec![2, 5]);
+        storage.set(&vec!["adata".to_string(), "b".to_string(), "x".to_string(), "y".to_string()], &vec![12, 15]);
+
+        let commit = storage.commit(0, "Tezos".to_string(), "Genesis".to_string()).unwrap();
+        let rv_all =  storage.get_key_values_by_prefix(&EntryHash::decode(&commit).unwrap(),&vec![]).unwrap();
+        let rv_data =  storage.get_key_values_by_prefix(&EntryHash::decode(&commit).unwrap(),&vec!["data".to_string()]).unwrap();
+        assert_eq!(all_json, serde_json::to_string(&rv_all.unwrap()).unwrap());
+        assert_eq!(data_json, serde_json::to_string(&rv_data.unwrap()).unwrap());
+    }
+
 }

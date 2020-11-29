@@ -3,7 +3,6 @@ use crate::codec::{SchemaError, Encoder, Decoder};
 use sled::{Error, Iter, IVec, Db, Batch};
 use failure::Fail;
 use std::marker::PhantomData;
-use dashmap::DashMap;
 use crate::db_iterator;
 use std::collections::HashMap;
 use crate::db_iterator::{DBIterator, DBIterationHandler};
