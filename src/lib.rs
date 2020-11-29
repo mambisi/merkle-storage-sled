@@ -8,6 +8,7 @@ mod schema;
 mod codec;
 mod merkle_storage;
 mod database;
+mod db_iterator;
 
 
 #[cfg(test)]

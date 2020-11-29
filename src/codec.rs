@@ -8,6 +8,7 @@ use failure::Fail;
 use serde::{Deserialize, Serialize};
 
 use crate::hash::Hash;
+use sled::IVec;
 
 /// Possible errors for schema
 #[derive(Debug, Fail)]
@@ -58,6 +59,7 @@ impl Decoder for String {
         String::from_utf8(bytes.to_vec()).map_err(|_| SchemaError::DecodeError)
     }
 }
+
 
 /// Generate codec (encoder + decoder) for a numeric type
 macro_rules! num_codec {

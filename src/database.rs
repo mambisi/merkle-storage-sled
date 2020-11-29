@@ -4,8 +4,9 @@ use sled::{Error, Iter, IVec, Db, Batch};
 use failure::Fail;
 use std::marker::PhantomData;
 use dashmap::DashMap;
-
+use crate::db_iterator;
 use std::collections::HashMap;
+use crate::db_iterator::{DBIterator, DBIterationHandler};
 
 impl From<SchemaError> for DBError {
     fn from(error: SchemaError) -> Self {
@@ -37,7 +38,9 @@ impl slog::Value for DBError {
     }
 }
 
-pub struct DBStats {}
+pub struct DBStats {
+    size_on_disk: u64
+}
 
 
 /// Custom trait extending RocksDB to better handle and enforce database schema
@@ -104,15 +107,25 @@ pub trait KeyValueStoreWithSchema<S: KeyValueSchema> {
     fn get_mem_use_stats(&self) -> Result<DBStats, DBError>;
 }
 
-pub struct IteratorWithSchema<S: KeyValueSchema>(Iter, PhantomData<S>);
+pub struct IteratorWithSchema<'a, S: KeyValueSchema>(DBIterator<'a>, PhantomData<S>);
 
-impl<S: KeyValueSchema> Iterator for IteratorWithSchema<S> {
+impl<'a, S: KeyValueSchema> Iterator for IteratorWithSchema<'a, S> {
     type Item = (Result<S::Key, SchemaError>, Result<S::Value, SchemaError>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.0.next().unwrap(){
-            Ok((k,v)) => {
-               Some((S::Key::decode(&k), S::Value::decode(&v)))
+        let i = match self.0.next() {
+            None => {
+                return None;
+            }
+            Some(d) => {
+                d
+            }
+        };
+
+
+        match i {
+            Ok((k, v)) => {
+                Some((S::Key::decode(&k), S::Value::decode(&v)))
             }
             Err(_) => {
                 None
@@ -121,15 +134,14 @@ impl<S: KeyValueSchema> Iterator for IteratorWithSchema<S> {
     }
 }
 
-impl<S: KeyValueSchema> DoubleEndedIterator for IteratorWithSchema<S> {
-    fn next_back(&mut self) -> Option<Self::Item> {
-        match self.0.next_back().unwrap(){
-            Ok((k,v)) => {
-                Some((S::Key::decode(&k), S::Value::decode(&v)))
-            }
-            Err(_) => {
-                None
-            }
+pub struct SledDBWrapper {
+    db: sled::Db
+}
+
+impl SledDBWrapper {
+    pub fn new(db: sled::Db) -> Self {
+        SledDBWrapper {
+            db
         }
     }
 }
@@ -140,22 +152,11 @@ pub enum Direction {
     Reverse,
 }
 
+/// Database iterator with schema mode, from start to end, from end to start or from specific key to end/start
 pub enum IteratorMode<'a, S: KeyValueSchema> {
     Start,
     End,
     From(&'a S::Key, Direction),
-}
-
-pub struct SledDBWrapper {
-    db: sled::Db
-}
-
-impl SledDBWrapper {
-    pub fn new(db : sled::Db) -> Self {
-        SledDBWrapper {
-            db
-        }
-    }
 }
 
 impl<S: KeyValueSchema> KeyValueStoreWithSchema<S> for SledDBWrapper {
@@ -222,21 +223,29 @@ impl<S: KeyValueSchema> KeyValueStoreWithSchema<S> for SledDBWrapper {
     fn iterator(&self, mode: IteratorMode<S>) -> Result<IteratorWithSchema<S>, DBError> {
         let iter = match mode {
             IteratorMode::Start => {
-                self.db.iter()
+                self.db.iterator(db_iterator::IteratorMode::Start)
             }
             IteratorMode::End => {
-                self.db.iter()
+                self.db.iterator(db_iterator::IteratorMode::End)
             }
-            IteratorMode::From(key, _) => {
+            IteratorMode::From(key, direction) => {
                 let key = key.encode()?;
-                self.db.range(key.as_slice()..)
+                match direction {
+                    Direction::Forward => {
+                        self.db.iterator(db_iterator::IteratorMode::From(key.into(), db_iterator::Direction::Forward))
+                    }
+                    Direction::Reverse => {
+                        self.db.iterator(db_iterator::IteratorMode::From(key.into(), db_iterator::Direction::Reverse))
+                    }
+                }
             }
         };
         Ok(IteratorWithSchema(iter, PhantomData))
     }
 
     fn prefix_iterator(&self, key: &S::Key) -> Result<IteratorWithSchema<S>, DBError> {
-        let iter = self.db.scan_prefix(key.encode()?);
+        let key = key.encode()?;
+        let iter = self.db.scan_prefix_iterator(&key);
         Ok(IteratorWithSchema(iter, PhantomData))
     }
 
@@ -261,7 +270,6 @@ impl<S: KeyValueSchema> KeyValueStoreWithSchema<S> for SledDBWrapper {
     }
 
     fn write_batch(&self, batch: Batch) -> Result<(), DBError> {
-
         match self.db.apply_batch(batch) {
             Ok(_) => {
                 Ok(())
@@ -275,7 +283,10 @@ impl<S: KeyValueSchema> KeyValueStoreWithSchema<S> for SledDBWrapper {
     }
 
     fn get_mem_use_stats(&self) -> Result<DBStats, DBError> {
-        unimplemented!()
+        Ok(DBStats {
+            size_on_disk: self.db.size_on_disk().unwrap_or(0)
+        })
     }
 }
+
 
