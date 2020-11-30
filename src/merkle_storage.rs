@@ -58,6 +58,7 @@ use crate::codec::BincodeEncoded;
 use crate::schema::KeyValueSchema;
 use crate::database::{KeyValueStoreWithSchema, SledDBWrapper};
 use crate::database::DBError;
+
 const HASH_LEN: usize = 32;
 
 pub type ContextKey = Vec<String>;
@@ -114,7 +115,7 @@ pub enum MerkleError {
     #[fail(display = "Serialization error: {:?}", error)]
     SerializationError { error: bincode::Error },
     #[fail(display = "SledDB error: {:?}", error)]
-    DBError { error : DBError},
+    DBError { error: DBError },
     /// Internal unrecoverable bugs that should never occur
     #[fail(display = "No root retrieved for this commit!")]
     CommitRootNotFound,
@@ -488,7 +489,7 @@ impl MerkleStorage {
 
         let k = &self.hash_entry(entry);
         let v = bincode::serialize(entry)?;
-        self.db.put_batch(batch,k,&v);
+        self.db.put_batch(batch, k, &v);
         match entry {
             Entry::Blob(_) => Ok(()),
             Entry::Tree(tree) => {
@@ -680,6 +681,7 @@ mod tests {
     #[test]
     #[serial]
     fn test_tree_hash() {
+
         let config = Config::new().cache_capacity(32 * 1024 * 1024).path(get_db_name());
         let mut storage = get_storage(config);
         storage.set(&vec!["a".to_string(), "foo".to_string()], &vec![97, 98, 99]); // abc
@@ -717,6 +719,8 @@ mod tests {
     #[test]
     #[serial]
     fn test_multiple_commit_hash() {
+        clean_db();
+
         let config = Config::new().cache_capacity(32 * 1024 * 1024).path(get_db_name());
         let mut storage = get_storage(config);
         let _commit = storage.commit(
@@ -910,16 +914,17 @@ mod tests {
         assert!(if let MerkleError::ValueNotFound { .. } = res.err().unwrap() { true } else { false });
     }
 
+
     // Test getting entire tree in string format for JSON RPC
     #[test]
+    #[serial]
     fn test_get_context_tree_by_prefix() {
-
         { clean_db(); }
 
         let all_json = "[[[\"adata\",\"b\",\"x\",\"y\"],[12,15]],[[\"data\",\"a\",\"x\",\"y\"],[5,6]],[[\"data\",\"b\",\"x\",\"y\"],[7,8]],[[\"data\",\"c\"],[2,5]]]";
         let data_json = "[[[\"data\",\"a\",\"x\",\"y\"],[5,6]],[[\"data\",\"b\",\"x\",\"y\"],[7,8]],[[\"data\",\"c\"],[2,5]]]";
 
-        let config = Config::new().temporary(true).path(get_db_name()).cache_capacity(32 * 1024 * 1024);
+        let config = Config::new().cache_capacity(32 * 1024 * 1024);
         let mut storage = get_storage(config);
         let _commit = storage.commit(0, "Tezos".to_string(), "Genesis".to_string());
 
@@ -931,10 +936,9 @@ mod tests {
         storage.set(&vec!["adata".to_string(), "b".to_string(), "x".to_string(), "y".to_string()], &vec![12, 15]);
 
         let commit = storage.commit(0, "Tezos".to_string(), "Genesis".to_string()).unwrap();
-        let rv_all =  storage.get_key_values_by_prefix(&EntryHash::decode(&commit).unwrap(),&vec![]).unwrap();
-        let rv_data =  storage.get_key_values_by_prefix(&EntryHash::decode(&commit).unwrap(),&vec!["data".to_string()]).unwrap();
+        let rv_all = storage.get_key_values_by_prefix(&EntryHash::decode(&commit).unwrap(), &vec![]).unwrap();
+        let rv_data = storage.get_key_values_by_prefix(&EntryHash::decode(&commit).unwrap(), &vec!["data".to_string()]).unwrap();
         assert_eq!(all_json, serde_json::to_string(&rv_all.unwrap()).unwrap());
         assert_eq!(data_json, serde_json::to_string(&rv_data.unwrap()).unwrap());
     }
-
 }
